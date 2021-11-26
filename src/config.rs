@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use directories::ProjectDirs;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 
 
 /// Locate the Path of the Config File.
@@ -159,6 +159,22 @@ impl<Cfg> std::ops::Try for ConfigOpen<Cfg> {
 }
 
 
+pub enum ConfigSaveError {
+    FileInaccessible(std::io::Error),
+    SerializeFailure(toml::ser::Error),
+}
+
+
+impl From<std::io::Error> for ConfigSaveError {
+    fn from(e: std::io::Error) -> Self { Self::FileInaccessible(e) }
+}
+
+
+impl From<toml::ser::Error> for ConfigSaveError {
+    fn from(e: toml::ser::Error) -> Self { Self::SerializeFailure(e) }
+}
+
+
 pub trait ConfigData: DeserializeOwned {
     const DEFAULT: &'static str;
 
@@ -274,7 +290,9 @@ pub trait ConfigData: DeserializeOwned {
 
 #[derive(Clone)]
 pub struct ConfigFile<Cfg> {
+    /// The stored configuration state.
     pub data: Cfg,
+    /// The path to the file associated with this configuration state.
     pub path: PathBuf,
 }
 
@@ -282,7 +300,10 @@ pub struct ConfigFile<Cfg> {
 impl<Cfg: ConfigData> ConfigFile<Cfg> {
     #[cfg(not(feature = "nightly"))]
     pub fn reload(&mut self) -> Result<(), ConfigOpen<Cfg>> {
+        // use std::mem::replace;
+
         match Cfg::open(&self.path) {
+            // ConfigOpen::FileValid(new) => Ok(replace(&mut self.data, new)),
             ConfigOpen::FileValid(new) => {
                 self.data = new;
                 Ok(())
@@ -295,6 +316,33 @@ impl<Cfg: ConfigData> ConfigFile<Cfg> {
     pub fn reload(&mut self) -> Result<(), ConfigOpen<Cfg>> {
         self.data = Cfg::open(&self.path)?;
         Ok(())
+
+        // Ok(std::mem::replace(&mut self.data, Cfg::open(&self.path)?))
+    }
+
+    pub fn save(
+        &self,
+        create_backup: bool,
+        create_parent: bool,
+    ) -> Result<(), ConfigSaveError>
+        where Cfg: Serialize
+    {
+        let Self { data, path } = self;
+
+        if create_backup && path.exists() {
+            if let Some(backup) = get_backup(path) {
+                rename(path, backup).ok();
+            }
+        } else if create_parent {
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    create_dir(parent)?;
+                }
+            }
+        }
+
+        let serial: String = toml::to_string(data)?;
+        Ok(File::create(path)?.write_all(serial.as_bytes())?)
     }
 }
 
