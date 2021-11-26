@@ -10,7 +10,7 @@ use directories::ProjectDirs;
 use serde::{de::DeserializeOwned, Serialize};
 
 
-/// Locate the Path of the Config File.
+/// Locate the path of the configuration file.
 fn find_path(
     qualifier: &str,
     organization: &str,
@@ -25,6 +25,8 @@ fn find_path(
 }
 
 
+/// Given a path, return a new path where a file at the first path may be moved
+///     to save as a backup.
 fn get_backup(path: &Path) -> Option<PathBuf> {
     const PREFIX: &str = ".bkp.";
 
@@ -38,14 +40,18 @@ fn get_backup(path: &Path) -> Option<PathBuf> {
 }
 
 
+/// The result of trying to find a configuration file.
 pub enum ConfigFind<Cfg> {
+    /// The file does not exist.
     DoesNotExist(PathBuf),
+    /// The file does exist; Also includes the result of attempting to load it.
     Exists(PathBuf, ConfigOpen<Cfg>),
+    /// No path was found at which to search for a file.
     NoPath,
 }
 
 impl<Cfg> ConfigFind<Cfg> {
-    /// Get a reference to the config data inside this value, if it was opened
+    /// Get a reference to the configuration inside this value, if it was opened
     ///     successfully.
     pub fn config(&self) -> Option<&Cfg> {
         match self {
@@ -54,7 +60,7 @@ impl<Cfg> ConfigFind<Cfg> {
         }
     }
 
-    /// Get the config data inside this value, if it was opened successfully.
+    /// Get the configuration inside this value, if it was opened successfully.
     pub fn into_config(self) -> Option<Cfg> {
         match self {
             Self::Exists(_, open) => open.into_config(),
@@ -62,6 +68,8 @@ impl<Cfg> ConfigFind<Cfg> {
         }
     }
 
+    /// Return a reference to the filepath checked by the search operation, if
+    ///     there was one.
     pub fn path(&self) -> Option<&PathBuf> {
         match self {
             Self::NoPath => None,
@@ -87,14 +95,18 @@ impl<Cfg> Display for ConfigFind<Cfg> {
 }
 
 
+/// The result of attempting to load a configuration from a filepath.
 pub enum ConfigOpen<Cfg> {
+    /// The file could not be opened.
     FileInaccessible(std::io::Error),
+    /// The file could not be parsed.
     FileInvalid(toml::de::Error),
+    /// The file load was successful.
     FileValid(Cfg),
 }
 
 impl<Cfg> ConfigOpen<Cfg> {
-    /// Get a reference to the config data inside this value, if it was opened
+    /// Get a reference to the configuration inside this value, if it was opened
     ///     successfully.
     pub fn config(&self) -> Option<&Cfg> {
         match self {
@@ -103,7 +115,7 @@ impl<Cfg> ConfigOpen<Cfg> {
         }
     }
 
-    /// Get the config data inside this value, if it was opened successfully.
+    /// Get the configuration inside this value, if it was opened successfully.
     pub fn into_config(self) -> Option<Cfg> {
         match self {
             Self::FileValid(config) => Some(config),
@@ -159,8 +171,11 @@ impl<Cfg> std::ops::Try for ConfigOpen<Cfg> {
 }
 
 
+/// An error returned when attempting to save a configuration into a file.
 pub enum ConfigSaveError {
+    /// The file could not be opened.
     FileInaccessible(std::io::Error),
+    /// The data could not be converted.
     SerializeFailure(toml::ser::Error),
 }
 
@@ -175,10 +190,14 @@ impl From<toml::ser::Error> for ConfigSaveError {
 }
 
 
+/// Implements a set of convenience functions for finding a configuration file
+///     and deserializing it into a usable struct.
 pub trait ConfigData: DeserializeOwned {
+    /// The text data of a default configuration file, as UTF-8. Ideally read
+    ///     from a default file at compile time using the [`include_str`] macro.
     const DEFAULT: &'static str;
 
-    /// Create a default Configuration file at the given path.
+    /// Create a default configuration file at the given path.
     ///
     /// # Arguments
     ///
@@ -209,6 +228,32 @@ pub trait ConfigData: DeserializeOwned {
         File::create(path)?.write_all(Self::DEFAULT.as_bytes())
     }
 
+    /// Load the default configuration directly, without looking for a file.
+    fn default() -> Result<Self, toml::de::Error> {
+        let new: Self = toml::from_str(Self::DEFAULT)?;
+
+        Ok(new.prepare())
+    }
+
+    /// Find and read a configuration file from a path defined programmatically
+    ///     by [`ProjectDirs`].
+    ///
+    /// # Arguments
+    ///
+    /// The first three of these arguments will be passed directly to
+    ///     [`ProjectDirs::from`]. Refer to that function for more details.
+    ///
+    /// * `qualifier`: Reverse domain qualifier. May be empty (`""`).
+    /// * `organization`: The organization responsible for the application. May
+    ///     be empty.
+    /// * `application`: The name of the application itself.
+    /// * `file`: The filename to be used for the Configuration file. This file
+    ///     will be placed into the directory returned by calling [`config_dir`]
+    ///     on the [`ProjectDirs`] created from the previous arguments.
+    ///
+    /// returns: `ConfigFind<Self>`
+    ///
+    /// [`config_dir`]: ProjectDirs::config_dir
     fn find(
         qualifier: &str,
         organization: &str,
@@ -225,29 +270,18 @@ pub trait ConfigData: DeserializeOwned {
         }
     }
 
+    /// Read a new configuration from a specific file, if it exists.
     fn from_path(path: PathBuf) -> ConfigFind<Self> {
         if path.exists() {
             let open = Self::open(&path);
-
             ConfigFind::Exists(path, open)
         } else {
             ConfigFind::DoesNotExist(path)
         }
     }
 
-    fn from_path_or_auto(
-        path_opt: Option<PathBuf>,
-        qualifier: &str,
-        organization: &str,
-        application: &str,
-        file: &str,
-    ) -> ConfigFind<Self> {
-        match path_opt {
-            None => Self::find(qualifier, organization, application, file),
-            Some(path) => Self::from_path(path),
-        }
-    }
-
+    /// Read a new configuration from a specific filepath, without first
+    ///     confirming that the file exists.
     fn open(path: &Path) -> ConfigOpen<Self> {
         use ConfigOpen::*;
 
@@ -288,6 +322,7 @@ pub trait ConfigData: DeserializeOwned {
 }
 
 
+/// A pairing of a configuration state with the file path at which it is saved.
 #[derive(Clone)]
 pub struct ConfigFile<Cfg> {
     /// The stored configuration state.
@@ -298,6 +333,8 @@ pub struct ConfigFile<Cfg> {
 
 
 impl<Cfg: ConfigData> ConfigFile<Cfg> {
+    /// Read from the file associated with this configuration, and replace the
+    ///     stored data.
     #[cfg(not(feature = "nightly"))]
     pub fn reload(&mut self) -> Result<(), ConfigOpen<Cfg>> {
         // use std::mem::replace;
@@ -312,6 +349,8 @@ impl<Cfg: ConfigData> ConfigFile<Cfg> {
         }
     }
 
+    /// Read from the file associated with this configuration, and replace the
+    ///     stored data.
     #[cfg(feature = "nightly")]
     pub fn reload(&mut self) -> Result<(), ConfigOpen<Cfg>> {
         self.data = Cfg::open(&self.path)?;
@@ -320,6 +359,7 @@ impl<Cfg: ConfigData> ConfigFile<Cfg> {
         // Ok(std::mem::replace(&mut self.data, Cfg::open(&self.path)?))
     }
 
+    /// Write the configuration into a new file at the associated path.
     pub fn save(
         &self,
         create_backup: bool,
