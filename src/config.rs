@@ -1,5 +1,6 @@
 use std::{
     ffi::OsString,
+    fmt::{Display, Formatter, self},
     fs::{create_dir, File, rename},
     io::{Read, Seek, SeekFrom, Write},
     ops::{Deref, DerefMut},
@@ -44,6 +45,23 @@ pub enum ConfigFind<Cfg> {
 }
 
 impl<Cfg> ConfigFind<Cfg> {
+    /// Get a reference to the config data inside this value, if it was opened
+    ///     successfully.
+    pub fn config(&self) -> Option<&Cfg> {
+        match self {
+            Self::Exists(_, open) => open.config(),
+            _ => None,
+        }
+    }
+
+    /// Get the config data inside this value, if it was opened successfully.
+    pub fn into_config(self) -> Option<Cfg> {
+        match self {
+            Self::Exists(_, open) => open.into_config(),
+            _ => None,
+        }
+    }
+
     pub fn path(&self) -> Option<&PathBuf> {
         match self {
             Self::NoPath => None,
@@ -54,10 +72,90 @@ impl<Cfg> ConfigFind<Cfg> {
 }
 
 
+impl<Cfg> Display for ConfigFind<Cfg> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DoesNotExist(path) => {
+                write!(f, "File does not exist: {}", path.display())
+            }
+            Self::Exists(path, open) => {
+                write!(f, "{} at {}", open, path.display())
+            }
+            Self::NoPath => f.write_str("Cannot find config path."),
+        }
+    }
+}
+
+
 pub enum ConfigOpen<Cfg> {
     FileInaccessible(std::io::Error),
     FileInvalid(toml::de::Error),
     FileValid(Cfg),
+}
+
+impl<Cfg> ConfigOpen<Cfg> {
+    /// Get a reference to the config data inside this value, if it was opened
+    ///     successfully.
+    pub fn config(&self) -> Option<&Cfg> {
+        match self {
+            Self::FileValid(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    /// Get the config data inside this value, if it was opened successfully.
+    pub fn into_config(self) -> Option<Cfg> {
+        match self {
+            Self::FileValid(config) => Some(config),
+            _ => None,
+        }
+    }
+}
+
+
+impl<Cfg> Display for ConfigOpen<Cfg> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FileInaccessible(e) => {
+                write!(f, "Cannot access file: {}", e)
+            }
+            Self::FileInvalid(e) => {
+                write!(f, "Cannot read configuration: {}", e)
+            }
+            Self::FileValid(..) => f.write_str("Successfully read file"),
+        }
+    }
+}
+
+
+#[cfg(feature = "nightly")]
+impl<Cfg> std::ops::FromResidual for ConfigOpen<Cfg> {
+    fn from_residual(residual: <Self as std::ops::Try>::Residual) -> Self {
+        match residual {
+            Err(e) => e,
+            Ok(..) => unreachable!(),
+        }
+    }
+}
+
+
+#[cfg(feature = "nightly")]
+impl<Cfg> std::ops::Try for ConfigOpen<Cfg> {
+    type Output = Cfg;
+    type Residual = Result<std::convert::Infallible, Self>;
+
+    fn from_output(output: Self::Output) -> Self {
+        Self::FileValid(output)
+    }
+
+    fn branch(self) -> std::ops::ControlFlow<Self::Residual, Self::Output> {
+        use std::ops::ControlFlow;
+
+        match self {
+            Self::FileValid(cfg) => ControlFlow::Continue(cfg),
+            other => ControlFlow::Break(Err(other)),
+        }
+    }
 }
 
 
@@ -74,12 +172,12 @@ pub trait ConfigData: DeserializeOwned {
     /// * `create_parent`: Whether to try to create the parent directory for the
     ///     new file, if it does not exist.
     ///
-    /// returns: `Result<(), Error>`
+    /// returns: `Result<(), std::io::Error>`
     fn create(
         path: &Path,
         create_backup: bool,
         create_parent: bool,
-    ) -> Result<(), ErrorIo> {
+    ) -> Result<(), std::io::Error> {
         if create_backup && path.exists() {
             if let Some(backup) = get_backup(path) {
                 rename(path, backup).ok();
@@ -182,6 +280,7 @@ pub struct ConfigFile<Cfg> {
 
 
 impl<Cfg: ConfigData> ConfigFile<Cfg> {
+    #[cfg(not(feature = "nightly"))]
     pub fn reload(&mut self) -> Result<(), ConfigOpen<Cfg>> {
         match Cfg::open(&self.path) {
             ConfigOpen::FileValid(new) => {
@@ -190,6 +289,12 @@ impl<Cfg: ConfigData> ConfigFile<Cfg> {
             }
             err => Err(err),
         }
+    }
+
+    #[cfg(feature = "nightly")]
+    pub fn reload(&mut self) -> Result<(), ConfigOpen<Cfg>> {
+        self.data = Cfg::open(&self.path)?;
+        Ok(())
     }
 }
 
