@@ -1,0 +1,10 @@
+[package]
+name = "tomlconf"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+directories = "4.0.1"
+serde = "1.0"
+toml = "0.5.8"
