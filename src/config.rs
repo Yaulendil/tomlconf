@@ -68,6 +68,14 @@ impl<Cfg> ConfigFind<Cfg> {
         }
     }
 
+    /// Get the configuration inside this value, if it was opened successfully.
+    pub fn into_result(self) -> Result<ConfigOpen<Cfg>, Self> {
+        match self {
+            Self::Exists(_, open) => Ok(open),
+            err => Err(err),
+        }
+    }
+
     /// Return a reference to the filepath checked by the search operation, if
     ///     there was one.
     pub fn path(&self) -> Option<&PathBuf> {
@@ -122,6 +130,14 @@ impl<Cfg> ConfigOpen<Cfg> {
             _ => None,
         }
     }
+
+    /// Get the configuration inside this value, if it was opened successfully.
+    pub fn into_result(self) -> Result<Cfg, Self> {
+        match self {
+            Self::FileValid(config) => Ok(config),
+            err => Err(err),
+        }
+    }
 }
 
 
@@ -172,6 +188,7 @@ impl<Cfg> std::ops::Try for ConfigOpen<Cfg> {
 
 
 /// An error returned when attempting to save a configuration into a file.
+#[derive(Debug)]
 pub enum ConfigSaveError {
     /// The file could not be opened.
     FileInaccessible(std::io::Error),
