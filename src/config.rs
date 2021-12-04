@@ -336,6 +336,65 @@ pub trait ConfigData: DeserializeOwned {
     fn with_path(self, path: PathBuf) -> ConfigFile<Self> {
         ConfigFile { data: self, path }
     }
+
+    /// Attempt to automatically handle all aspects of configuration setup.
+    ///
+    /// If any step of the process fails, this function returns a description
+    ///     stating plainly what went wrong, suitable for immediate delivery to
+    ///     the user. If the process is successful, the return is a string
+    ///     describing the source of the configuration (either opening a found
+    ///     file or creating a new one), as well as the configuration structure
+    ///     itself.
+    ///
+    /// Arguments passed to this function are the same as those of [`find`].
+    ///
+    /// [`find`]: Self::find
+    fn setup(
+        qualifier: &str,
+        organization: &str,
+        application: &str,
+        file: &str,
+    ) -> Result<(String, ConfigFile<Self>), String> {
+        use ConfigFind::*;
+
+        match Self::find(qualifier, organization, application, file) {
+            DoesNotExist(path) => match Self::create(&path, true, true) {
+                Err(e) => Err(format!(
+                    "Cannot save {} as Config file: {}",
+                    path.display(), e,
+                )),
+                Ok(..) => match Self::open(&path) {
+                    ConfigOpen::FileInaccessible(e) => Err(format!(
+                        "Cannot access {} as Config file: {}",
+                        path.display(), e,
+                    )),
+                    ConfigOpen::FileInvalid(e) => Err(format!(
+                        "Cannot read {} as Config file: {}",
+                        path.display(), e,
+                    )),
+                    ConfigOpen::FileValid(cfg) => Ok((
+                        format!("Created new Config file: {}", path.display()),
+                        cfg.with_path(path),
+                    )),
+                }
+            }
+            Exists(path, cfg) => match cfg {
+                ConfigOpen::FileInaccessible(e) => Err(format!(
+                    "Cannot access {} as Config file: {}",
+                    path.display(), e,
+                )),
+                ConfigOpen::FileInvalid(e) => Err(format!(
+                    "Cannot read {} as Config file: {}",
+                    path.display(), e,
+                )),
+                ConfigOpen::FileValid(cfg) => Ok((
+                    format!("Using existing Config file: {}", path.display()),
+                    cfg.with_path(path),
+                )),
+            }
+            NoPath => Err(String::from("Cannot find path for Config file.")),
+        }
+    }
 }
 
 
