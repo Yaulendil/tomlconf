@@ -1,7 +1,7 @@
 use std::{
     ffi::OsString,
     fmt::{Display, Formatter, self},
-    fs::{create_dir, File, rename},
+    fs::{create_dir_all, File, rename},
     io::{Read, Seek, SeekFrom, Write},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -237,7 +237,7 @@ pub trait ConfigData: DeserializeOwned {
         } else if create_parent {
             if let Some(parent) = path.parent() {
                 if !parent.exists() {
-                    create_dir(parent)?;
+                    create_dir_all(parent)?;
                 }
             }
         }
@@ -452,7 +452,7 @@ impl<Cfg: ConfigData> ConfigFile<Cfg> {
         } else if create_parent {
             if let Some(parent) = path.parent() {
                 if !parent.exists() {
-                    create_dir(parent)?;
+                    create_dir_all(parent)?;
                 }
             }
         }
