@@ -15,6 +15,7 @@
 //! # Example
 //!
 //! ```
+//! use serde::Deserialize;
 //! use tomlconf::*;
 //!
 //!
@@ -35,7 +36,7 @@
 //!         "Cool Software LTD", // Organization name.
 //!         "TextPrinter", // Application name.
 //!         "config.toml", // Configuration file name.
-//!     ).unwrap() {
+//!     ) {
 //!         Ok((msg, config)) => {
 //!             //  This `msg` variable tells the user whether an existing config
 //!             //      file was found, or whether a new one was created with the

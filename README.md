@@ -17,7 +17,7 @@
 TomlConf uses the [`directories`](https://crates.io/crates/directories) library to locate the appropriate place for application data in a cross-platform way, and populates that location with a default file included at compile-time.
 
 All you need to do is define a struct that implements `serde::de::DeserializeOwned` (typically by way of `#[derive(Deserialize)]` for a struct that owns its data) and implement the `ConfigData` trait for it.
-You can then use the constructors on the trait to create, load, and read the data to a file;
+You can then use the constructors on the trait to create, load, and read the data from a file;
 If you also derive `Serialize`, you can even save changes to the data back into the file.
 
 # Example
@@ -40,7 +40,7 @@ fn main() {
         "Cool Software LTD", // Organization name.
         "TextPrinter", // Application name.
         "config.toml", // Configuration file name.
-    ).unwrap() {
+    ) {
         Ok((msg, config)) => {
             //  This `msg` variable tells the user whether an existing config
             //      file was found, or whether a new one was created with the
