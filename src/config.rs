@@ -395,6 +395,59 @@ pub trait ConfigData: DeserializeOwned {
             NoPath => Err(String::from("Cannot find path for Config file.")),
         }
     }
+
+    /// Attempt to automatically handle all aspects of configuration setup.
+    ///
+    /// If the target file exists, but is invalid, it will be overwritten with a
+    ///     new default file.
+    ///
+    /// Arguments passed to this function are the same as those of [`find`].
+    ///
+    /// [`find`]: Self::find
+    fn setup_replace_invalid(
+        qualifier: &str,
+        organization: &str,
+        application: &str,
+        file: &str,
+    ) -> Result<(String, ConfigFile<Self>), String> {
+        use ConfigFind::*;
+
+        match Self::find(qualifier, organization, application, file) {
+            Exists(path, ConfigOpen::FileInvalid(_))
+            | DoesNotExist(path) => match Self::create(&path, true, true) {
+                Err(e) => Err(format!(
+                    "Cannot save {} as Config file: {}",
+                    path.display(), e,
+                )),
+                Ok(..) => match Self::open(&path) {
+                    ConfigOpen::FileInaccessible(e) => Err(format!(
+                        "Cannot access {} as Config file: {}",
+                        path.display(), e,
+                    )),
+                    ConfigOpen::FileInvalid(e) => Err(format!(
+                        "Cannot read {} as Config file: {}",
+                        path.display(), e,
+                    )),
+                    ConfigOpen::FileValid(cfg) => Ok((
+                        format!("Created new Config file: {}", path.display()),
+                        cfg.with_path(path),
+                    )),
+                }
+            }
+            Exists(path, cfg) => match cfg {
+                ConfigOpen::FileInaccessible(e) => Err(format!(
+                    "Cannot access {} as Config file: {}",
+                    path.display(), e,
+                )),
+                ConfigOpen::FileInvalid(_) => unreachable!(),
+                ConfigOpen::FileValid(cfg) => Ok((
+                    format!("Using existing Config file: {}", path.display()),
+                    cfg.with_path(path),
+                )),
+            }
+            NoPath => Err(String::from("Cannot find path for Config file.")),
+        }
+    }
 }
 
 
